@@ -231,6 +231,7 @@ td {
     display: flex;
     align-items: center;
     gap: 8px;
+    text-decoration: none;
     transition: background-color 0.3s ease;
 }
 

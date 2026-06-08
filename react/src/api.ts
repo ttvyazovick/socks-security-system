@@ -34,6 +34,10 @@ export async function getWashHistory(sockId: string): Promise<any> {
     return fetchApi<any>(`/api/wash_history/${sockId}`);
 }
 
+export async function getSock(sockId: string): Promise<any> {
+    return fetchApi<any>(`/api/sock/${sockId}`);
+}
+
 export async function toggleCleanStatus(sockId: string): Promise<any> {
     return fetchApi<any>(`/toggle_clean/${sockId}`, {
         method: 'POST',
@@ -51,6 +55,13 @@ export async function deleteSock(sockId: string): Promise<any> {
 
 export async function addSock(formData: FormData): Promise<any> {
     return fetchApi<any>('/add', {
+        method: 'POST',
+        body: formData,
+    });
+}
+
+export async function editSock(sockId: string, formData: FormData): Promise<any> {
+    return fetchApi<any>(`/edit_sock/${sockId}`, {
         method: 'POST',
         body: formData,
     });
