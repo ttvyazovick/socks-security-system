@@ -436,7 +436,7 @@ function Content() {
 function Footer() {
     return (
         <footer className="footer">
-            <p>© 2026 Socks Security System. Все права защищены.</p>
+            <p>© 2026 Socks Security System. Все права защищены. https://github.com/meT1moffey/sss</p>
         </footer>
     )
 }
@@ -728,7 +728,7 @@ function About() {
                 </nav>
                 <main>
                     <h2>О Socks Security System</h2>
-                    <p>Socks Security System - это приложение для управления вашей коллекцией носков. Оно помогает отслеживать состояние носков, их носкость и историю стирок.</p>
+                    <p>Socks Security System - это приложение для управления вашей коллекцией носков. Оно помогает отслеживать состояние носков, их носкость и историю стирок. https://github.com/meT1moffey/sss</p>
                 </main>
             </div>
             <Footer/>
