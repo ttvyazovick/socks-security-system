@@ -296,8 +296,8 @@ function WideSockRow(args: any) {
             </td>
             <td className="actions-cell">
                 <div className="action-buttons">
-                    <EditBtn sock={sock}/>
                     <ToggleClean sockId={sock.id} cleanState={cleanState} updateWearCount={args.updateWearCount}/>
+                    <EditBtn sock={sock}/>
                     <DeleteBtn sock={sock} unload={args.unload}/>
                 </div>
             </td>
@@ -349,8 +349,8 @@ function ThinSockRow(args: any) {
             </div>
             <div className="actions-cell">
                 <div className="action-buttons">
-                    <EditBtn sock={sock}/>
                     <ToggleClean sockId={sock.id} cleanState={cleanState} updateWearCount={args.updateWearCount}/>
+                    <EditBtn sock={sock}/>
                     <DeleteBtn sock={sock} unload={args.unload}/>
                 </div>
             </div>
