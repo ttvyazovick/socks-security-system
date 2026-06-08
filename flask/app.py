@@ -3,6 +3,7 @@ from flask_cors import CORS
 from datetime import datetime
 import pymysql
 import os
+import re
 from werkzeug.utils import secure_filename
 import boto3
 
@@ -12,6 +13,30 @@ app.config['DATABASE'] = 'socks.db'
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 1 << 24
 app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'webp'}
+app.config['ALLOWED_MIME_TYPES'] = {'image/png', 'image/jpeg', 'image/jpg', 'image/webp'}
+
+COLOR_OPTIONS = {
+    'Черные': '#2c3e50',
+    'Белые': '#ecf0f1',
+    'Серые': '#7f8c8d',
+    'Синие': '#3498db',
+    'Зеленые': '#27ae60',
+    'Красные': '#e74c3c',
+    'Желтые': '#f1c40f',
+    'Фиолетовые': '#9b59b6',
+    'Розовые': '#e84393',
+    'Оранжевые': '#e67e22',
+    'Голубые': '#00cec9',
+    'Коричневые': '#a1887f',
+    'Бежевые': '#f5deb3',
+    'Бирюзовые': '#1abc9c',
+    'Мятные': '#98ff98',
+}
+STYLE_OPTIONS = {'Спортивные', 'Повседневные', 'Домашние', 'Бизнес', 'Короткие', 'Термо', 'Вязаные', 'Смешные', 'Праздничные'}
+PATTERN_OPTIONS = {'Однотонные', 'Полоска', 'Горошек', 'Клетка', 'Геометрия', 'Принт', 'Логотип'}
+MATERIAL_OPTIONS = {'Хлопок', 'Шерсть', 'Синтетика', 'Шелк', 'Бамбук', 'Лен'}
+SIZE_OPTIONS = {'XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'}
+BRAND_OPTIONS = {'Nike', 'Puma', 'Reebok', 'Uniqlo', 'H&M', 'Wilson', 'Funny Socks', 'Unknown'}
 
 BUCKET_NAME = os.environ.get('BUCKET_NAME')
 if BUCKET_NAME:
@@ -23,9 +48,70 @@ if BUCKET_NAME:
         region_name=os.environ['BUCKET_REGION']
     )
 
-def allowed_file(filename):
+def error_response(message, status=400):
+    return jsonify({'success': False, 'message': message}), status
+
+def allowed_file(file):
+    filename = file.filename
     return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
+           filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS'] and \
+           file.mimetype in app.config['ALLOWED_MIME_TYPES']
+
+def parse_int_arg(name, default, min_value=0, max_value=None):
+    value = request.args.get(name, str(default))
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f'Параметр {name} должен быть числом')
+
+    if value < min_value:
+        raise ValueError(f'Параметр {name} не может быть меньше {min_value}')
+    if max_value is not None:
+        value = min(value, max_value)
+    return value
+
+def format_datetime(value):
+    if not value:
+        return ''
+    if isinstance(value, datetime):
+        return value.strftime('%d.%m.%Y')
+    return datetime.strptime(str(value), '%Y-%m-%d %H:%M:%S').strftime('%d.%m.%Y')
+
+def validate_sock_form(form):
+    color_name = form.get('color')
+    color_hex = form.get('color_hex')
+    style = form.get('style')
+    pattern = form.get('pattern')
+    material = form.get('material')
+    size = form.get('size')
+    brand = form.get('brand')
+
+    if not all([color_name, color_hex, style, pattern, material, size, brand]):
+        return None, error_response('Заполните все обязательные поля')
+    if color_name not in COLOR_OPTIONS:
+        return None, error_response('Некорректный цвет')
+    if not re.fullmatch(r'#[0-9a-fA-F]{6}', color_hex) or COLOR_OPTIONS[color_name].lower() != color_hex.lower():
+        return None, error_response('Некорректный код цвета')
+    if style not in STYLE_OPTIONS:
+        return None, error_response('Некорректный стиль')
+    if pattern not in PATTERN_OPTIONS:
+        return None, error_response('Некорректный узор')
+    if material not in MATERIAL_OPTIONS:
+        return None, error_response('Некорректный материал')
+    if size not in SIZE_OPTIONS:
+        return None, error_response('Некорректный размер')
+    if brand not in BRAND_OPTIONS:
+        return None, error_response('Некорректный бренд')
+
+    return {
+        'color': color_name,
+        'color_hex': color_hex,
+        'style': style,
+        'pattern': pattern,
+        'material': material,
+        'size': size,
+        'brand': brand,
+    }, None
 
 def img_url(filename):
     if BUCKET_NAME:
@@ -47,6 +133,7 @@ def save_img(file):
             ExtraArgs={'ContentType': file.content_type}
         )
     else:
+        os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
         local_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         with open(local_path, 'wb') as f:
             f.write(file.read())
@@ -129,16 +216,21 @@ def close_db(error):
 
 @app.route('/api/load', methods=['GET'])
 def load_socks():
-    query = '%' + request.args['query'].lower() + '%'
-    offset = int(request.args['offset'])
-    limit = int(request.args['limit'])
-    
-    priority = request.args['priority']
+    query = '%' + request.args.get('query', '').lower()[:100] + '%'
+    try:
+        offset = parse_int_arg('offset', 0)
+        limit = parse_int_arg('limit', 5, min_value=1, max_value=50)
+    except ValueError as error:
+        return error_response(str(error))
+
+    priority = request.args.get('priority', 'clean')
     order = {
         'clean': 'clean DESC',
         'dirty': 'clean ASC',
         'frequent': 'wear_count DESC'
-    }[priority]
+    }.get(priority)
+    if order is None:
+        return error_response('Некорректный параметр priority')
 
     with get_db().cursor() as db:
         db.execute(f'''
@@ -153,13 +245,8 @@ def load_socks():
     for sock in socks:
         sock_dict = dict(sock)
 
-        sock_dict['created_at_formatted'] = datetime.strptime(
-            str(sock_dict['created_at']), '%Y-%m-%d %H:%M:%S'
-        ).strftime('%d.%m.%Y')
-        
-        sock_dict['last_washed_formatted'] = datetime.strptime(
-            str(sock_dict['last_washed']), '%Y-%m-%d %H:%M:%S'
-        ).strftime('%d.%m.%Y')
+        sock_dict['created_at_formatted'] = format_datetime(sock_dict['created_at'])
+        sock_dict['last_washed_formatted'] = format_datetime(sock_dict['last_washed'])
 
         if sock_dict['photo_name']:
             sock_dict['photo_url'] = img_url(sock_dict['photo_name'])
@@ -175,7 +262,7 @@ def get_sock(sock_id):
         sock = db.fetchone()
 
     if not sock:
-        return jsonify({'success': False, 'message': 'Носок не найден'}), 404
+        return error_response('Носок не найден', 404)
 
     sock_dict = dict(sock)
     if sock_dict['photo_name']:
@@ -186,18 +273,16 @@ def get_sock(sock_id):
 
 @app.route('/add', methods=['POST'])
 def add_sock():
-    color_name = request.form.get('color')
-    color_hex = request.form.get('color_hex')
-    style = request.form.get('style')
-    pattern = request.form.get('pattern')
-    material = request.form.get('material')
-    size = request.form.get('size')
-    brand = request.form.get('brand')
+    sock_data, error = validate_sock_form(request.form)
+    if error:
+        return error
     
     photo_name = None
     if 'photo' in request.files:
         file = request.files['photo']
-        if file and file.filename != '' and allowed_file(file.filename):
+        if file and file.filename != '':
+            if not allowed_file(file):
+                return error_response('Можно загрузить только PNG, JPG или WEBP изображение')
             file.filename = secure_filename(file.filename)
             photo_name = save_img(file)
     
@@ -209,8 +294,8 @@ def add_sock():
                             size, brand, photo_name, clean, created_at, 
                             last_washed, wear_count)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 1, %s, %s, 0)
-        ''', (color_name, color_hex, style, pattern, material, 
-            size, brand, photo_name, current_time, current_time))
+        ''', (sock_data['color'], sock_data['color_hex'], sock_data['style'], sock_data['pattern'], sock_data['material'],
+            sock_data['size'], sock_data['brand'], photo_name, current_time, current_time))
     
     return jsonify({
         'success': True,
@@ -219,25 +304,23 @@ def add_sock():
 
 @app.route('/edit_sock/<string:sock_id>', methods=['POST'])
 def edit_sock(sock_id):
-    color_name = request.form.get('color')
-    color_hex = request.form.get('color_hex')
-    style = request.form.get('style')
-    pattern = request.form.get('pattern')
-    material = request.form.get('material')
-    size = request.form.get('size')
-    brand = request.form.get('brand')
+    sock_data, error = validate_sock_form(request.form)
+    if error:
+        return error
 
     with get_db().cursor() as db:
         db.execute('SELECT photo_name FROM socks WHERE id = %s', (sock_id,))
         sock = db.fetchone()
 
     if not sock:
-        return jsonify({'success': False, 'message': 'Носок не найден'}), 404
+        return error_response('Носок не найден', 404)
 
     photo_name = sock['photo_name']
     if 'photo' in request.files:
         file = request.files['photo']
-        if file and file.filename != '' and allowed_file(file.filename):
+        if file and file.filename != '':
+            if not allowed_file(file):
+                return error_response('Можно загрузить только PNG, JPG или WEBP изображение')
             if photo_name:
                 delete_img(photo_name)
             file.filename = secure_filename(file.filename)
@@ -249,7 +332,8 @@ def edit_sock(sock_id):
             SET color = %s, color_hex = %s, style = %s, pattern = %s,
                 material = %s, size = %s, brand = %s, photo_name = %s
             WHERE id = %s
-        ''', (color_name, color_hex, style, pattern, material, size, brand, photo_name, sock_id))
+        ''', (sock_data['color'], sock_data['color_hex'], sock_data['style'], sock_data['pattern'],
+              sock_data['material'], sock_data['size'], sock_data['brand'], photo_name, sock_id))
 
     return jsonify({
         'success': True,
@@ -261,6 +345,9 @@ def toggle_clean(sock_id):
     with get_db().cursor() as db:
         db.execute('SELECT clean, wear_count FROM socks WHERE id = %s', (sock_id,))
         sock = db.fetchone()
+
+    if not sock:
+        return error_response('Носок не найден', 404)
     
     new_clean_status = not sock['clean']
     current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -291,7 +378,10 @@ def delete_sock(sock_id):
         db.execute('SELECT photo_name FROM socks WHERE id = %s', (sock_id,))
         sock = db.fetchone()
 
-    if sock and sock['photo_name']:
+    if not sock:
+        return error_response('Носок не найден', 404)
+
+    if sock['photo_name']:
         delete_img(sock['photo_name'])
     
     with get_db().cursor() as db:
@@ -340,4 +430,4 @@ def get_wash_history(sock_id):
 if __name__ == '__main__':
     with app.app_context():
         init_db()
-    app.run(host='0.0.0.0', debug=True)
+    app.run(host='0.0.0.0', debug=os.environ.get('FLASK_DEBUG') == '1')

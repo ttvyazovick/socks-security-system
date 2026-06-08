@@ -584,6 +584,7 @@ function ImageInput(args: any) {
 function AddSockPage(args: any) {
     const isEdit = args.sockId !== undefined
     const [sock, setSock] = useState<any>(null)
+    const [loadError, setLoadError] = useState<string>('')
 
     let style_options = [
         'Спортивные', 'Повседневные', 'Домашние', 
@@ -600,18 +601,29 @@ function AddSockPage(args: any) {
 
     useEffect(() => {
         if(isEdit) {
-            getSock(args.sockId).then(data => setSock(data))
+            getSock(args.sockId)
+                .then(data => setSock(data))
+                .catch(() => setLoadError('Такого носка нет'))
         }
     }, [])
 
     async function Submit(e: any) {
         e.preventDefault()
         const data = new FormData(e.target)
-        if(isEdit) {
-            await editSock(args.sockId, data)
-        }
-        else {
-            await addSock(data)
+        try {
+            if(isEdit) {
+                await editSock(args.sockId, data)
+            }
+            else {
+                await addSock(data)
+            }
+        } catch (error: any) {
+            OpenModal({
+                title: 'Не удалось сохранить носок',
+                iClass: 'fas fa-exclamation-triangle',
+                body: <p>{error.message}</p>
+            })
+            return
         }
         const modal = {
             title: isEdit ? 'Носок обновлен' : 'Носок добавлен',
@@ -626,7 +638,7 @@ function AddSockPage(args: any) {
         OpenModal(modal)
     }
 
-    if(isEdit && sock === null) {
+    if(isEdit && (sock === null || loadError)) {
         return (
             <div>
                 <div className="container">
@@ -637,7 +649,15 @@ function AddSockPage(args: any) {
                         </div>
                     </header>
                     <main>
-                        <p>Загрузка...</p>
+                        {loadError ? (
+                            <div className="not-found-message">
+                                <i className="fas fa-info-circle"></i>
+                                <p>{loadError}</p>
+                                <a href="/" className="btn-primary" style={{textDecoration: 'none'}}>На главную страницу</a>
+                            </div>
+                        ) : (
+                            <p>Загрузка...</p>
+                        )}
                     </main>
                 </div>
                 <Footer/>

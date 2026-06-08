@@ -775,6 +775,23 @@ td {
     color: #e0e6e9;
 }
 
+.not-found-message {
+    text-align: center;
+    padding: 40px 20px;
+    color: #2c3e50;
+}
+
+.not-found-message i {
+    font-size: 2rem;
+    color: #27ae60;
+    margin-bottom: 15px;
+}
+
+.not-found-message p {
+    margin-bottom: 20px;
+    font-size: 1.1rem;
+}
+
 .table-end {
     margin-top: 40px;
     display: flex;
