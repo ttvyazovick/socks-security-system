@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import './style.css'
 
-import { getStats, loadSocks, toggleCleanStatus, getWashHistory, addSock, deleteSock } from './api'
+import { getStats, loadSocks, toggleCleanStatus, getWashHistory, getSock, addSock, editSock, deleteSock } from './api'
 
 let performSearch = async (_: string) => {}
 function Header() {
@@ -190,9 +190,10 @@ function ShowHistory(args: any) {
 function ToggleClean(args: any) {
     const [clean, setClean] = args.cleanState
     async function toggle() {
-        await toggleCleanStatus(args.sockId)
+        const data = await toggleCleanStatus(args.sockId)
         updateStats()
         setClean(!clean)
+        args.updateWearCount(args.sockId, data.wear_count)
     }
 
     if(clean) {
@@ -245,6 +246,14 @@ function DeleteBtn(args: any) {
     )
 }
 
+function EditBtn(args: any) {
+    return (
+        <a href={`/edit/${args.sock.id}`} className="action-btn btn-edit">
+            <i className="fas fa-pen"></i> Редактировать
+        </a>
+    )
+}
+
 function WideSockRow(args: any) {
     const sock = args.sock
     const cleanState = useState<boolean>(sock.clean)
@@ -287,7 +296,8 @@ function WideSockRow(args: any) {
             </td>
             <td className="actions-cell">
                 <div className="action-buttons">
-                    <ToggleClean sockId={sock.id} cleanState={cleanState}/>
+                    <EditBtn sock={sock}/>
+                    <ToggleClean sockId={sock.id} cleanState={cleanState} updateWearCount={args.updateWearCount}/>
                     <DeleteBtn sock={sock} unload={args.unload}/>
                 </div>
             </td>
@@ -339,7 +349,8 @@ function ThinSockRow(args: any) {
             </div>
             <div className="actions-cell">
                 <div className="action-buttons">
-                    <ToggleClean sockId={sock.id} cleanState={cleanState}/>
+                    <EditBtn sock={sock}/>
+                    <ToggleClean sockId={sock.id} cleanState={cleanState} updateWearCount={args.updateWearCount}/>
                     <DeleteBtn sock={sock} unload={args.unload}/>
                 </div>
             </div>
@@ -360,13 +371,13 @@ function SocksTable(args: any) {
                         <th>Действия</th>
                     </tr>
                 </thead>
-                <tbody>{args.socks.map((sock: any) => <WideSockRow sock={sock} unload={args.unload}/>)}</tbody>
+                <tbody>{args.socks.map((sock: any) => <WideSockRow sock={sock} unload={args.unload} updateWearCount={args.updateWearCount}/>)}</tbody>
             </table>
         )
     }
     else {
         return (
-            <div>{args.socks.map((sock: any) => <ThinSockRow sock={sock} unload={args.unload}/>)}</div>
+            <div>{args.socks.map((sock: any) => <ThinSockRow sock={sock} unload={args.unload} updateWearCount={args.updateWearCount}/>)}</div>
         )
     }
 }
@@ -400,6 +411,9 @@ function Content() {
     function unload(sock: any) {
         setSocks(prev => [...prev.slice(0, prev.indexOf(sock)), ...prev.slice(prev.indexOf(sock) + 1, prev.length)])
     }
+    function updateWearCount(sockId: string, wearCount: number) {
+        setSocks(prev => prev.map(sock => sock.id == sockId ? {...sock, wear_count: wearCount} : sock))
+    }
     useEffect(() => { loadMoreSocks(true) }, [priorityState[0]])
 
     return (
@@ -413,7 +427,7 @@ function Content() {
                 </div>
             </div>
 
-            <SocksTable priority={priorityState[0]} socks={socks} unload={unload}/>
+            <SocksTable priority={priorityState[0]} socks={socks} unload={unload} updateWearCount={updateWearCount}/>
             <LoadMorebtn loadMoreSocks={() => loadMoreSocks()}/>
         </main>
     )
@@ -463,13 +477,13 @@ function MainPage(args: any) {
 function ColorOption(args: any) {
     const color = args.color
     return (
-        <button className="color-option" style={{backgroundColor: color.hex }} onClick={() => args.colorState[1](color)}>
+        <button type="button" className={'color-option' + (args.colorState[0]?.hex == color.hex ? ' selected' : '')} style={{backgroundColor: color.hex }} onClick={() => args.colorState[1](color)}>
             <i className="fas fa-check"></i>
         </button>
     )
 }
 
-function ColorInput() {
+function ColorInput(args: any) {
     const color_options = [
         {'name': 'Черные', 'hex': '#2c3e50'},
         {'name': 'Белые', 'hex': '#ecf0f1'},
@@ -487,7 +501,7 @@ function ColorInput() {
         {'name': 'Бирюзовые', 'hex': '#1abc9c'},
         {'name': 'Мятные', 'hex': '#98ff98'},
     ]
-    const colorState = useState<any>({})
+    const colorState = useState<any>(args.value ?? {})
     const curColor = colorState[0]
 
     return (
@@ -517,7 +531,7 @@ function ParamInput(args: any) {
             <label htmlFor="style">
                 <i className={args.iClass}></i>{args.title}
             </label>
-            <select name={args.name} required>
+            <select name={args.name} defaultValue={args.value ?? ''} required>
                 <option value="">{args.hint}</option>
                 {args.options.map((opt: any) => <option value={opt}>{opt}</option>)}
             </select>
@@ -552,8 +566,8 @@ function ImagePreview(args: any) {
     }
 }
 
-function ImageInput() {
-    const [src, setSrc] = useState<string>('')
+function ImageInput(args: any) {
+    const [src, setSrc] = useState<string>(args.src ?? '')
     const fileRef = useRef(null as HTMLInputElement | null)
     return (
         <div className="form-group">
@@ -562,12 +576,15 @@ function ImageInput() {
             </label>
             <input type="file" name="photo" accept="image/*" className="file-input" ref={fileRef} onChange={(e) => setSrc(e.target.files?.length ? URL.createObjectURL(e.target.files[0]) : '')}/>
             <small className="form-hint">Можно загрузить фото с компьютера (PNG, JPG, WEBP, до 16MB)</small>
-            <ImagePreview src={src} remove={() => { fileRef.current!.value = ''; setSrc('') }}/>
+            <ImagePreview src={src} remove={() => { fileRef.current!.value = ''; setSrc(args.src ?? '') }}/>
         </div>
     )
 }
 
 function AddSockPage(args: any) {
+    const isEdit = args.sockId !== undefined
+    const [sock, setSock] = useState<any>(null)
+
     let style_options = [
         'Спортивные', 'Повседневные', 'Домашние', 
         'Бизнес', 'Короткие', 'Термо', 'Вязаные',
@@ -581,21 +598,51 @@ function AddSockPage(args: any) {
     let size_options = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL']
     let brand_options = ['Nike', 'Puma', 'Reebok', 'Uniqlo', 'H&M', 'Wilson', 'Funny Socks', 'Unknown']
 
+    useEffect(() => {
+        if(isEdit) {
+            getSock(args.sockId).then(data => setSock(data))
+        }
+    }, [])
+
     async function Submit(e: any) {
         e.preventDefault()
         const data = new FormData(e.target)
-        await addSock(data)
+        if(isEdit) {
+            await editSock(args.sockId, data)
+        }
+        else {
+            await addSock(data)
+        }
         const modal = {
-            title: 'Носок добавлен',
+            title: isEdit ? 'Носок обновлен' : 'Носок добавлен',
             iClass: 'fas fa-check-circle',
             body: (
                 <div className='success-modal'>
                     <a href='/' className='btn-primary' style={{textDecoration: 'none'}}>На главную страницу</a>
-                    <button onClick={() => OpenModal(null)} className='btn-secondary'>Добавить еще</button>
+                    {!isEdit && <button onClick={() => OpenModal(null)} className='btn-secondary'>Добавить еще</button>}
                 </div>
             )
         }
         OpenModal(modal)
+    }
+
+    if(isEdit && sock === null) {
+        return (
+            <div>
+                <div className="container">
+                    <header>
+                        <div className="logo">
+                            <i className="fas fa-socks"></i>
+                            <h1>Редактировать носок</h1>
+                        </div>
+                    </header>
+                    <main>
+                        <p>Загрузка...</p>
+                    </main>
+                </div>
+                <Footer/>
+            </div>
+        )
     }
 
     return (
@@ -604,35 +651,35 @@ function AddSockPage(args: any) {
                 <header>
                     <div className="logo">
                         <i className="fas fa-socks"></i>
-                        <h1>Добавить носок</h1>
+                        <h1>{isEdit ? 'Редактировать носок' : 'Добавить носок'}</h1>
                     </div>
-                    <p className="subtitle">Добавьте новый носок в вашу коллекцию</p>
+                    <p className="subtitle">{isEdit ? 'Обновите информацию о носке' : 'Добавьте новый носок в вашу коллекцию'}</p>
                 </header>
 
                 <nav className="breadcrumb">
                     <a href="/"><i className="fas fa-home"></i> Главная</a>
                     <i className="fas fa-chevron-right"></i>
-                    <span>Добавить носок</span>
+                    <span>{isEdit ? 'Редактировать носок' : 'Добавить носок'}</span>
                 </nav>
 
                 <main>
                     <form id="addSockForm" className="sock-form" onSubmit={(e) => Submit(e)}>
                         <div className="form-section">
-                            <ColorInput/>
-                            <ParamInput iClass="fas fa-socks" title="Стиль" hint="Выберите стиль" name="style" options={style_options}/>
-                            <ParamInput iClass="fas fa-shapes" title="Узор" hint="Выберите узор" name="pattern" options={pattern_options}/>
-                            <ParamInput iClass="fas fa-spa" title="Материал" hint="Выберите материал" name="material" options={material_options}/>
-                            <ParamInput iClass="fas fa-ruler" title="Размер" hint="Выберите размер" name="size" options={size_options}/>
-                            <ParamInput iClass="fas fa-tag" title="Бренд" hint="Выберите бренд" name="brand" options={brand_options}/>
-                            <ImageInput/>
+                            <ColorInput value={sock ? {'name': sock.color, 'hex': sock.color_hex} : undefined}/>
+                            <ParamInput iClass="fas fa-socks" title="Стиль" hint="Выберите стиль" name="style" options={style_options} value={sock?.style}/>
+                            <ParamInput iClass="fas fa-shapes" title="Узор" hint="Выберите узор" name="pattern" options={pattern_options} value={sock?.pattern}/>
+                            <ParamInput iClass="fas fa-spa" title="Материал" hint="Выберите материал" name="material" options={material_options} value={sock?.material}/>
+                            <ParamInput iClass="fas fa-ruler" title="Размер" hint="Выберите размер" name="size" options={size_options} value={sock?.size}/>
+                            <ParamInput iClass="fas fa-tag" title="Бренд" hint="Выберите бренд" name="brand" options={brand_options} value={sock?.brand}/>
+                            <ImageInput src={sock?.photo_url}/>
                         </div>
 
                         <div className="form-actions">
-                            <button type="button" className="btn-secondary" onClick={() => window.location.href=''}>
+                            <button type="button" className="btn-secondary" onClick={() => window.location.href='/'}>
                                 <i className="fas fa-times"></i> Отмена
                             </button>
                             <button type="submit" className="btn-primary">
-                                <i className="fas fa-plus"></i> Добавить носок
+                                <i className={isEdit ? 'fas fa-save' : 'fas fa-plus'}></i> {isEdit ? 'Сохранить' : 'Добавить носок'}
                             </button>
                         </div>
                     </form>
@@ -677,6 +724,8 @@ function App() {
     switch(window.location.href.split('/')[3]) {
     case 'add':
         return <AddSockPage modal={modalLink}/>
+    case 'edit':
+        return <AddSockPage modal={modalLink} sockId={window.location.href.split('/')[4]}/>
     case 'about':
         return <About/>
     default:

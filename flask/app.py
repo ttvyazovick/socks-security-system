@@ -168,6 +168,21 @@ def load_socks():
     
     return jsonify(socks_list)
 
+@app.route('/api/sock/<string:sock_id>', methods=['GET'])
+def get_sock(sock_id):
+    with get_db().cursor() as db:
+        db.execute('SELECT * FROM socks WHERE id = %s', (sock_id,))
+        sock = db.fetchone()
+
+    if not sock:
+        return jsonify({'success': False, 'message': 'Носок не найден'}), 404
+
+    sock_dict = dict(sock)
+    if sock_dict['photo_name']:
+        sock_dict['photo_url'] = img_url(sock_dict['photo_name'])
+
+    return jsonify(sock_dict)
+
 
 @app.route('/add', methods=['POST'])
 def add_sock():
@@ -201,6 +216,45 @@ def add_sock():
         'success': True,
         'message': 'Носок успешно добавлен!'
     })
+
+@app.route('/edit_sock/<string:sock_id>', methods=['POST'])
+def edit_sock(sock_id):
+    color_name = request.form.get('color')
+    color_hex = request.form.get('color_hex')
+    style = request.form.get('style')
+    pattern = request.form.get('pattern')
+    material = request.form.get('material')
+    size = request.form.get('size')
+    brand = request.form.get('brand')
+
+    with get_db().cursor() as db:
+        db.execute('SELECT photo_name FROM socks WHERE id = %s', (sock_id,))
+        sock = db.fetchone()
+
+    if not sock:
+        return jsonify({'success': False, 'message': 'Носок не найден'}), 404
+
+    photo_name = sock['photo_name']
+    if 'photo' in request.files:
+        file = request.files['photo']
+        if file and file.filename != '' and allowed_file(file.filename):
+            if photo_name:
+                delete_img(photo_name)
+            file.filename = secure_filename(file.filename)
+            photo_name = save_img(file)
+
+    with get_db().cursor() as db:
+        db.execute('''
+            UPDATE socks
+            SET color = %s, color_hex = %s, style = %s, pattern = %s,
+                material = %s, size = %s, brand = %s, photo_name = %s
+            WHERE id = %s
+        ''', (color_name, color_hex, style, pattern, material, size, brand, photo_name, sock_id))
+
+    return jsonify({
+        'success': True,
+        'message': 'Носок успешно обновлен!'
+    })
     
 @app.route('/toggle_clean/<string:sock_id>', methods=['POST'])
 def toggle_clean(sock_id):
@@ -220,12 +274,15 @@ def toggle_clean(sock_id):
             ''', (current_time, sock_id))
             
             db.execute('INSERT INTO wash_history (sock_id) VALUES (%s)', (sock_id,))
+            wear_count = sock['wear_count'] + 1
         else:
             db.execute('UPDATE socks SET clean = 0 WHERE id = %s', (sock_id,))
+            wear_count = sock['wear_count']
     
     return jsonify({
         'success': True, 
-        'new_status': 'clean' if new_clean_status else 'dirty'
+        'new_status': 'clean' if new_clean_status else 'dirty',
+        'wear_count': wear_count
     })
 
 @app.route('/delete_sock/<string:sock_id>', methods=['DELETE'])
