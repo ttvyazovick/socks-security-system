@@ -436,7 +436,7 @@ function Content() {
 function Footer() {
     return (
         <footer className="footer">
-            <p>© 2026 Socks Security System. Все права защищены. https://github.com/meT1moffey/sss</p>
+            <p>© 2026 Socks Security System. Все права защищены. <a>https://github.com/meT1moffey/sss</a></p>
         </footer>
     )
 }
@@ -706,7 +706,7 @@ function AddSockPage(args: any) {
                 </main>
                 <Modal modal={args.modal}/>
             </div>
-            <Footer/>
+            </>
         </div>
     )
 }
@@ -728,10 +728,10 @@ function About() {
                 </nav>
                 <main>
                     <h2>О Socks Security System</h2>
-                    <p>Socks Security System - это приложение для управления вашей коллекцией носков. Оно помогает отслеживать состояние носков, их носкость и историю стирок. https://github.com/meT1moffey/sss</p>
+                    <p>Socks Security System - это приложение для управления вашей коллекцией носков. Оно помогает отслеживать состояние носков, их носкость и историю стирок. <a>https://github.com/meT1moffey/sss</a></p>
                 </main>
             </div>
-            <Footer/>
+            </>
         </div>
     )
 }
