@@ -439,7 +439,7 @@ function Footer() {
             <p>© 2026 Socks Security System. Все права защищены.</p>
             <p>
                 <a href="https://github.com/meT1moffey/sss" target="_blank" rel="noreferrer">
-                    Материалы проекта
+                    https://github.com/meT1moffey/sss
                 </a>
             </p>
         </footer>
@@ -733,7 +733,11 @@ function About() {
                 </nav>
                 <main>
                     <h2>О Socks Security System</h2>
-                    <p>Socks Security System - это приложение для управления вашей коллекцией носков. Оно помогает отслеживать состояние носков, их носкость и историю стирок. <a href="https://github.com/meT1moffey/sss" target="_blank" rel="noreferrer">Материалы проекта</a></p>
+                    <p>
+                        Socks Security System - это приложение для управления вашей коллекцией носков. Оно помогает отслеживать состояние носков, их носкость и историю стирок. Проект создан как учебная работа по сетевым технологиям и демонстрирует работу веб-приложения с API, базой данных и загружаемыми изображениями.
+                        <br/>
+                        <a href="https://github.com/meT1moffey/sss" target="_blank" rel="noreferrer">https://github.com/meT1moffey/sss</a>
+                    </p>
                 </main>
             </div>
             <Footer/>
