@@ -205,10 +205,6 @@ def init_db():
             )
         ''')
 
-@app.before_request
-def before_request():
-    init_db()
-
 @app.teardown_appcontext
 def close_db(error):
     if hasattr(g, 'db'):
@@ -427,7 +423,8 @@ def get_wash_history(sock_id):
         'history': [row['wash_date'] for row in history]
     })
 
+with app.app_context():
+    init_db()
+
 if __name__ == '__main__':
-    with app.app_context():
-        init_db()
     app.run(host='0.0.0.0', debug=os.environ.get('FLASK_DEBUG') == '1')
