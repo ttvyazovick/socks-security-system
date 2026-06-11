@@ -78,6 +78,12 @@ def attach_orphan_socks(user_id):
     with get_db().cursor() as db:
         db.execute('UPDATE socks SET user_id = %s WHERE user_id IS NULL', (user_id,))
 
+def attach_orphan_socks_to_first_user(db):
+    db.execute('SELECT id FROM users ORDER BY created_at ASC, id ASC LIMIT 1')
+    first_user = db.fetchone()
+    if first_user:
+        db.execute('UPDATE socks SET user_id = %s WHERE user_id IS NULL', (first_user['id'],))
+
 def allowed_file(file):
     filename = file.filename
     return '.' in filename and \
@@ -249,6 +255,8 @@ def init_db():
                 FOREIGN KEY (sock_id) REFERENCES socks (id)
             )
         ''')
+
+        attach_orphan_socks_to_first_user(db)
 
 @app.teardown_appcontext
 def close_db(error):
