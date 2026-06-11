@@ -3,10 +3,61 @@ import { useEffect, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import './style.css'
 
-import { getStats, loadSocks, toggleCleanStatus, getWashHistory, getSock, addSock, editSock, deleteSock } from './api'
+import { getStats, loadSocks, toggleCleanStatus, getWashHistory, getSock, addSock, editSock, deleteSock, getMe, login, register, logout } from './api'
 
 let performSearch = async (_: string) => {}
-function Header() {
+function AuthForm(args: any) {
+    const [username, setUsername] = useState<string>('')
+    const [password, setPassword] = useState<string>('')
+    const [error, setError] = useState<string>('')
+    const [isLoading, setIsLoading] = useState<boolean>(false)
+    const isRegister = args.mode === 'register'
+
+    async function Submit(e: any) {
+        e.preventDefault()
+        setError('')
+        setIsLoading(true)
+        try {
+            const data = isRegister ? await register(username, password) : await login(username, password)
+            args.onAuthChange(data.user)
+            OpenModal(null)
+        } catch (error: any) {
+            setError(error.message)
+        } finally {
+            setIsLoading(false)
+        }
+    }
+
+    return (
+        <form className="auth-form" onSubmit={Submit}>
+            <p className="auth-hint">Логин и пароль: латиница и нижнее подчеркивание, от 4 до 16 символов.</p>
+            <label>
+                Логин
+                <input value={username} onChange={(e) => setUsername(e.target.value)} pattern="[A-Za-z_]{4,16}" minLength={4} maxLength={16} required autoFocus/>
+            </label>
+            <label>
+                Пароль
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} pattern="[A-Za-z_]{4,16}" minLength={4} maxLength={16} required/>
+            </label>
+            {error && <div className="auth-error">{error}</div>}
+            <button type="submit" className="btn-primary" disabled={isLoading}>
+                <i className={isRegister ? 'fas fa-user-plus' : 'fas fa-sign-in-alt'}></i>
+                {isLoading ? 'Подождите...' : isRegister ? 'Зарегистрироваться' : 'Войти'}
+            </button>
+        </form>
+    )
+}
+
+function OpenAuthModal(mode: string, onAuthChange: (user: any) => void) {
+    const isRegister = mode === 'register'
+    OpenModal({
+        title: isRegister ? 'Регистрация' : 'Вход',
+        iClass: isRegister ? 'fas fa-user-plus' : 'fas fa-sign-in-alt',
+        body: <AuthForm mode={mode} onAuthChange={onAuthChange}/>
+    })
+}
+
+function Header(args: any) {
     const [query, setQuery] = useState<string>('')
     const inputRef = useRef<HTMLInputElement>(null)
 
@@ -23,16 +74,33 @@ function Header() {
                     <h1>Socks Security System</h1>
                 </div>
                 <div className="header-actions">
-                    <a href="/add" className="add-btn">
+                    {args.user && <a href="/add" className="add-btn">
                         <i className="fas fa-plus"></i> Добавить носок
-                    </a>
+                    </a>}
                     <a href="/about" className="add-btn">
                         <i className="fas fa-info-circle"></i> О системе
                     </a>
+                    {args.user ? (
+                        <div className="user-panel">
+                            <span><i className="fas fa-user"></i>{args.user.username}</span>
+                            <button className="auth-btn" onClick={args.onLogout}>
+                                <i className="fas fa-sign-out-alt"></i> Выйти
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="auth-actions">
+                            <button className="auth-btn" onClick={() => OpenAuthModal('login', args.onAuthChange)}>
+                                <i className="fas fa-sign-in-alt"></i> Войти
+                            </button>
+                            <button className="auth-btn auth-btn-primary" onClick={() => OpenAuthModal('register', args.onAuthChange)}>
+                                <i className="fas fa-user-plus"></i> Зарегистрироваться
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
             
-            <div className="search-bar">
+            {args.user && <div className="search-bar">
                 <button onClick={SearchInput}>
                     <i className="fas fa-search"></i>
                 </button>
@@ -41,7 +109,7 @@ function Header() {
                 <button id="clearSearch" className="clear-search-btn" style={{display: query === '' ? 'none' : undefined}} onClick={() => { inputRef.current!.value = ''; SearchInput() }}>
                     <i className="fas fa-times"></i> Очистить поиск
                 </button>
-            </div>
+            </div>}
         </header>
     )
 }
@@ -465,13 +533,41 @@ function Modal(args: any) {
     )
 }
 
+function AuthRequired(args: any) {
+    return (
+        <main>
+            <div className="auth-required">
+                <i className="fas fa-lock"></i>
+                <h2>Авторизуйтесь, пожалуйста</h2>
+                <p>После входа здесь появится ваша личная коллекция носков.</p>
+                <div className="auth-required-actions">
+                    <button className="btn-primary" onClick={() => OpenAuthModal('login', args.onAuthChange)}>
+                        <i className="fas fa-sign-in-alt"></i> Войти
+                    </button>
+                    <button className="btn-secondary" onClick={() => OpenAuthModal('register', args.onAuthChange)}>
+                        <i className="fas fa-user-plus"></i> Зарегистрироваться
+                    </button>
+                </div>
+            </div>
+        </main>
+    )
+}
+
 function MainPage(args: any) {
     return (
         <div>
             <div className="container">
-                <Header/>
-                <Stats/>
-                <Content/>
+                <Header user={args.user} onAuthChange={args.onAuthChange} onLogout={args.onLogout}/>
+                {args.isAuthLoading ? (
+                    <main><div className="auth-required"><p>Проверяем авторизацию...</p></div></main>
+                ) : args.user ? (
+                    <>
+                        <Stats/>
+                        <Content/>
+                    </>
+                ) : (
+                    <AuthRequired onAuthChange={args.onAuthChange}/>
+                )}
                 <Footer/>
             </div>
             <Modal modal={args.modal}/>
@@ -747,18 +843,38 @@ function About() {
 
 function App() {
     const [modalLink, setModal] = useState<any>(null)
+    const [user, setUser] = useState<any>(null)
+    const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true)
     OpenModal = (modal: any) => {
         setModal(modal)
     }
+
+    useEffect(() => {
+        getMe()
+            .then(data => setUser(data.user))
+            .catch(() => setUser(null))
+            .finally(() => setIsAuthLoading(false))
+    }, [])
+
+    async function Logout() {
+        await logout()
+        setUser(null)
+        OpenModal(null)
+    }
+
     switch(window.location.href.split('/')[3]) {
     case 'add':
+        if(isAuthLoading || !user)
+            return <MainPage modal={modalLink} user={user} isAuthLoading={isAuthLoading} onAuthChange={setUser} onLogout={Logout}/>
         return <AddSockPage modal={modalLink}/>
     case 'edit':
+        if(isAuthLoading || !user)
+            return <MainPage modal={modalLink} user={user} isAuthLoading={isAuthLoading} onAuthChange={setUser} onLogout={Logout}/>
         return <AddSockPage modal={modalLink} sockId={window.location.href.split('/')[4]}/>
     case 'about':
         return <About/>
     default:
-        return <MainPage modal={modalLink}/>
+        return <MainPage modal={modalLink} user={user} isAuthLoading={isAuthLoading} onAuthChange={setUser} onLogout={Logout}/>
     }
 }
 

@@ -1,19 +1,25 @@
-from flask import Flask, jsonify, request, g
+from flask import Flask, jsonify, request, g, session
 from flask_cors import CORS
 from datetime import datetime
 import pymysql
 import os
 import re
+from functools import wraps
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
 import boto3
 
 app = Flask(__name__)
-CORS(app)
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-me')
+app.config['SESSION_COOKIE_SAMESITE'] = os.environ.get('SESSION_COOKIE_SAMESITE', 'Lax')
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE', '').lower() == 'true'
+CORS(app, supports_credentials=True)
 app.config['DATABASE'] = 'socks.db'
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 1 << 24
 app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'webp'}
 app.config['ALLOWED_MIME_TYPES'] = {'image/png', 'image/jpeg', 'image/jpg', 'image/webp'}
+AUTH_VALUE_PATTERN = re.compile(r'^[A-Za-z_]{4,16}$')
 
 COLOR_OPTIONS = {
     'Черные': '#2c3e50',
@@ -50,6 +56,27 @@ if BUCKET_NAME:
 
 def error_response(message, status=400):
     return jsonify({'success': False, 'message': message}), status
+
+def validate_auth_value(value):
+    return isinstance(value, str) and AUTH_VALUE_PATTERN.fullmatch(value) is not None
+
+def auth_validation_message(field):
+    return f'{field} должен быть длиной от 4 до 16 символов и состоять только из латинских букв и нижнего подчеркивания'
+
+def current_user_id():
+    return session.get('user_id')
+
+def login_required(route):
+    @wraps(route)
+    def wrapped(*args, **kwargs):
+        if not current_user_id():
+            return error_response('Авторизуйтесь, пожалуйста', 401)
+        return route(*args, **kwargs)
+    return wrapped
+
+def attach_orphan_socks(user_id):
+    with get_db().cursor() as db:
+        db.execute('UPDATE socks SET user_id = %s WHERE user_id IS NULL', (user_id,))
 
 def allowed_file(file):
     filename = file.filename
@@ -179,8 +206,18 @@ def get_db():
 def init_db():
     with get_db().cursor() as db:
         db.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                username VARCHAR(16) NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        db.execute('''
             CREATE TABLE IF NOT EXISTS socks (
                 id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NULL,
                 color VARCHAR(10) NOT NULL,
                 color_hex VARCHAR(7) NOT NULL,
                 style VARCHAR(12) NOT NULL,
@@ -196,6 +233,14 @@ def init_db():
             )
         ''')
 
+        db.execute("SHOW COLUMNS FROM socks LIKE 'user_id'")
+        if not db.fetchone():
+            db.execute('ALTER TABLE socks ADD COLUMN user_id INT NULL AFTER id')
+
+        db.execute("SHOW INDEX FROM socks WHERE Key_name = 'idx_socks_user_id'")
+        if not db.fetchone():
+            db.execute('CREATE INDEX idx_socks_user_id ON socks (user_id)')
+
         db.execute('''
             CREATE TABLE IF NOT EXISTS wash_history (
                 id INTEGER PRIMARY KEY AUTO_INCREMENT,
@@ -210,7 +255,91 @@ def close_db(error):
     if hasattr(g, 'db'):
         g.db.close()
 
+@app.route('/api/register', methods=['POST'])
+def register():
+    data = request.get_json(silent=True) or {}
+    username = (data.get('username') or '').strip()
+    password = (data.get('password') or '').strip()
+
+    if not validate_auth_value(username):
+        return error_response(auth_validation_message('Логин'))
+    if not validate_auth_value(password):
+        return error_response(auth_validation_message('Пароль'))
+
+    with get_db().cursor() as db:
+        db.execute('SELECT COUNT(*) AS count FROM users')
+        users_count = db.fetchone()['count']
+
+        db.execute('SELECT id FROM users WHERE username = %s', (username,))
+        if db.fetchone():
+            return error_response('Пользователь с таким логином уже существует', 409)
+
+        db.execute(
+            'INSERT INTO users (username, password_hash) VALUES (%s, %s)',
+            (username, generate_password_hash(password))
+        )
+        user_id = db.lastrowid
+
+    if users_count == 0:
+        attach_orphan_socks(user_id)
+
+    session.clear()
+    session['user_id'] = user_id
+    session['username'] = username
+
+    return jsonify({
+        'success': True,
+        'user': {'id': user_id, 'username': username},
+    })
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    data = request.get_json(silent=True) or {}
+    username = (data.get('username') or '').strip()
+    password = (data.get('password') or '').strip()
+
+    if not validate_auth_value(username) or not validate_auth_value(password):
+        return error_response('Неверный логин или пароль', 401)
+
+    with get_db().cursor() as db:
+        db.execute('SELECT id, username, password_hash FROM users WHERE username = %s', (username,))
+        user = db.fetchone()
+
+    if not user or not check_password_hash(user['password_hash'], password):
+        return error_response('Неверный логин или пароль', 401)
+
+    session.clear()
+    session['user_id'] = user['id']
+    session['username'] = user['username']
+
+    return jsonify({
+        'success': True,
+        'user': {'id': user['id'], 'username': user['username']},
+    })
+
+@app.route('/api/logout', methods=['POST'])
+def logout():
+    session.clear()
+    return jsonify({'success': True})
+
+@app.route('/api/me', methods=['GET'])
+def me():
+    user_id = current_user_id()
+    if not user_id:
+        return jsonify({'success': True, 'user': None})
+
+    with get_db().cursor() as db:
+        db.execute('SELECT id, username FROM users WHERE id = %s', (user_id,))
+        user = db.fetchone()
+
+    if not user:
+        session.clear()
+        return jsonify({'success': True, 'user': None})
+
+    return jsonify({'success': True, 'user': dict(user)})
+
 @app.route('/api/load', methods=['GET'])
+@login_required
 def load_socks():
     query = '%' + request.args.get('query', '').lower()[:100] + '%'
     try:
@@ -231,10 +360,11 @@ def load_socks():
     with get_db().cursor() as db:
         db.execute(f'''
             SELECT * FROM socks
-            WHERE LOWER(color) LIKE %s OR LOWER(style) LIKE %s OR LOWER(brand) LIKE %s OR %s LIKE ''
+            WHERE user_id = %s
+              AND (LOWER(color) LIKE %s OR LOWER(style) LIKE %s OR LOWER(brand) LIKE %s OR %s LIKE '')
             ORDER BY {order}, created_at DESC
             LIMIT %s OFFSET %s
-        ''', (query, query, query, query, limit, offset))
+        ''', (current_user_id(), query, query, query, query, limit, offset))
         socks = db.fetchall()
     
     socks_list = []
@@ -252,9 +382,10 @@ def load_socks():
     return jsonify(socks_list)
 
 @app.route('/api/sock/<string:sock_id>', methods=['GET'])
+@login_required
 def get_sock(sock_id):
     with get_db().cursor() as db:
-        db.execute('SELECT * FROM socks WHERE id = %s', (sock_id,))
+        db.execute('SELECT * FROM socks WHERE id = %s AND user_id = %s', (sock_id, current_user_id()))
         sock = db.fetchone()
 
     if not sock:
@@ -268,6 +399,7 @@ def get_sock(sock_id):
 
 
 @app.route('/add', methods=['POST'])
+@login_required
 def add_sock():
     sock_data, error = validate_sock_form(request.form)
     if error:
@@ -286,11 +418,11 @@ def add_sock():
     
     with get_db().cursor() as db:
         db.execute('''
-            INSERT INTO socks (color, color_hex, style, pattern, material, 
+            INSERT INTO socks (user_id, color, color_hex, style, pattern, material,
                             size, brand, photo_name, clean, created_at, 
                             last_washed, wear_count)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 1, %s, %s, 0)
-        ''', (sock_data['color'], sock_data['color_hex'], sock_data['style'], sock_data['pattern'], sock_data['material'],
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 1, %s, %s, 0)
+        ''', (current_user_id(), sock_data['color'], sock_data['color_hex'], sock_data['style'], sock_data['pattern'], sock_data['material'],
             sock_data['size'], sock_data['brand'], photo_name, current_time, current_time))
     
     return jsonify({
@@ -299,13 +431,14 @@ def add_sock():
     })
 
 @app.route('/edit_sock/<string:sock_id>', methods=['POST'])
+@login_required
 def edit_sock(sock_id):
     sock_data, error = validate_sock_form(request.form)
     if error:
         return error
 
     with get_db().cursor() as db:
-        db.execute('SELECT photo_name FROM socks WHERE id = %s', (sock_id,))
+        db.execute('SELECT photo_name FROM socks WHERE id = %s AND user_id = %s', (sock_id, current_user_id()))
         sock = db.fetchone()
 
     if not sock:
@@ -327,9 +460,9 @@ def edit_sock(sock_id):
             UPDATE socks
             SET color = %s, color_hex = %s, style = %s, pattern = %s,
                 material = %s, size = %s, brand = %s, photo_name = %s
-            WHERE id = %s
+            WHERE id = %s AND user_id = %s
         ''', (sock_data['color'], sock_data['color_hex'], sock_data['style'], sock_data['pattern'],
-              sock_data['material'], sock_data['size'], sock_data['brand'], photo_name, sock_id))
+              sock_data['material'], sock_data['size'], sock_data['brand'], photo_name, sock_id, current_user_id()))
 
     return jsonify({
         'success': True,
@@ -337,9 +470,10 @@ def edit_sock(sock_id):
     })
     
 @app.route('/toggle_clean/<string:sock_id>', methods=['POST'])
+@login_required
 def toggle_clean(sock_id):
     with get_db().cursor() as db:
-        db.execute('SELECT clean, wear_count FROM socks WHERE id = %s', (sock_id,))
+        db.execute('SELECT clean, wear_count FROM socks WHERE id = %s AND user_id = %s', (sock_id, current_user_id()))
         sock = db.fetchone()
 
     if not sock:
@@ -353,13 +487,13 @@ def toggle_clean(sock_id):
             db.execute('''
                 UPDATE socks 
                 SET clean = 1, last_washed = %s, wear_count = wear_count + 1 
-                WHERE id = %s
-            ''', (current_time, sock_id))
+                WHERE id = %s AND user_id = %s
+            ''', (current_time, sock_id, current_user_id()))
             
             db.execute('INSERT INTO wash_history (sock_id) VALUES (%s)', (sock_id,))
             wear_count = sock['wear_count'] + 1
         else:
-            db.execute('UPDATE socks SET clean = 0 WHERE id = %s', (sock_id,))
+            db.execute('UPDATE socks SET clean = 0 WHERE id = %s AND user_id = %s', (sock_id, current_user_id()))
             wear_count = sock['wear_count']
     
     return jsonify({
@@ -369,9 +503,10 @@ def toggle_clean(sock_id):
     })
 
 @app.route('/delete_sock/<string:sock_id>', methods=['DELETE'])
+@login_required
 def delete_sock(sock_id):
     with get_db().cursor() as db:
-        db.execute('SELECT photo_name FROM socks WHERE id = %s', (sock_id,))
+        db.execute('SELECT photo_name FROM socks WHERE id = %s AND user_id = %s', (sock_id, current_user_id()))
         sock = db.fetchone()
 
     if not sock:
@@ -381,8 +516,8 @@ def delete_sock(sock_id):
         delete_img(sock['photo_name'])
     
     with get_db().cursor() as db:
-        db.execute('DELETE FROM socks WHERE id = %s', (sock_id,))
         db.execute('DELETE FROM wash_history WHERE sock_id = %s', (sock_id,))
+        db.execute('DELETE FROM socks WHERE id = %s AND user_id = %s', (sock_id, current_user_id()))
     
     return jsonify({
         'success': True,
@@ -390,6 +525,7 @@ def delete_sock(sock_id):
     })
 
 @app.route('/api/stats')
+@login_required
 def get_stats():
     with get_db().cursor() as db:
         db.execute('''
@@ -399,7 +535,8 @@ def get_stats():
                 COUNT(*) - COALESCE(SUM(clean), 0) as dirty,
                 AVG(wear_count) as avg_wear_count
             FROM socks
-        ''')
+            WHERE user_id = %s
+        ''', (current_user_id(),))
         stats = db.fetchone()
     
     return jsonify({
@@ -408,14 +545,16 @@ def get_stats():
     })
 
 @app.route('/api/wash_history/<string:sock_id>')
+@login_required
 def get_wash_history(sock_id):
     with get_db().cursor() as db:
         db.execute('''
-            SELECT wash_date 
-            FROM wash_history 
-            WHERE sock_id = %s 
-            ORDER BY wash_date DESC
-        ''', (sock_id,))
+            SELECT wash_history.wash_date
+            FROM wash_history
+            JOIN socks ON socks.id = wash_history.sock_id
+            WHERE wash_history.sock_id = %s AND socks.user_id = %s
+            ORDER BY wash_history.wash_date DESC
+        ''', (sock_id, current_user_id()))
         history = db.fetchall()
     
     return jsonify({

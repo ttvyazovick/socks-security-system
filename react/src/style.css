@@ -298,6 +298,53 @@ td {
     color: #219653;
 }
 
+.auth-actions,
+.user-panel {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    justify-content: center;
+}
+
+.user-panel span {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background: rgba(255, 255, 255, 0.18);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 25px;
+    font-weight: 600;
+}
+
+.auth-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 18px;
+    border: 2px solid rgba(255, 255, 255, 0.85);
+    background: transparent;
+    color: white;
+    border-radius: 25px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.auth-btn:hover,
+.auth-btn-primary {
+    background: white;
+    color: #27ae60;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.12);
+}
+
+.auth-btn-primary:hover {
+    background: #f8f9fa;
+    color: #219653;
+    transform: translateY(-2px);
+}
+
 .header-top {
     display: flex;
     justify-content: space-between;
@@ -558,6 +605,81 @@ td {
 
 .confirm-modal {
     max-width: 500px;
+}
+
+.auth-form {
+    display: grid;
+    gap: 16px;
+}
+
+.auth-form label {
+    display: grid;
+    gap: 8px;
+    color: #2c3e50;
+    font-weight: 600;
+}
+
+.auth-form input {
+    width: 100%;
+    padding: 12px 14px;
+    border: 2px solid #e0e6e9;
+    border-radius: 8px;
+    font-size: 1rem;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.auth-form input:focus {
+    outline: none;
+    border-color: #27ae60;
+    box-shadow: 0 0 0 3px rgba(39, 174, 96, 0.12);
+}
+
+.auth-hint {
+    color: #7f8c8d;
+}
+
+.auth-error {
+    padding: 12px 14px;
+    background: #fdecea;
+    color: #c0392b;
+    border-radius: 8px;
+    font-weight: 600;
+}
+
+.auth-form .btn-primary {
+    justify-content: center;
+}
+
+.auth-required {
+    text-align: center;
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 25px 10px;
+}
+
+.auth-required > i {
+    font-size: 3rem;
+    color: #27ae60;
+    background: #eafaf1;
+    padding: 18px;
+    border-radius: 16px;
+    margin-bottom: 18px;
+}
+
+.auth-required h2 {
+    margin-bottom: 10px;
+}
+
+.auth-required p {
+    color: #7f8c8d;
+    margin-bottom: 22px;
+}
+
+.auth-required-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: center;
 }
 
 .confirm-actions {
@@ -1101,6 +1223,14 @@ td {
 .btn-secondary:hover {
     background: #f8f9fa;
     border-color: #bdc3c7;
+}
+
+.btn-primary:disabled,
+.btn-secondary:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
 }
 
 .file-input {

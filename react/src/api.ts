@@ -4,6 +4,7 @@ async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise
     try {
         const response = await fetch(API_URL + endpoint, {
             ...options,
+            credentials: 'include',
             headers: {
                 'Accept': 'application/json',
                 ...options.headers,
@@ -24,6 +25,39 @@ async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise
         console.error('API Error:', error);
         throw error;
     }
+}
+
+export async function getMe(): Promise<any> {
+    return fetchApi<any>('/api/me');
+}
+
+export async function login(username: string, password: string): Promise<any> {
+    return fetchApi<any>('/api/login', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({username, password}),
+    });
+}
+
+export async function register(username: string, password: string): Promise<any> {
+    return fetchApi<any>('/api/register', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({username, password}),
+    });
+}
+
+export async function logout(): Promise<any> {
+    return fetchApi<any>('/api/logout', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+    });
 }
 
 export async function getStats(): Promise<any> {
